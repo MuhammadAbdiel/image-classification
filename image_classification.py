@@ -11,9 +11,21 @@ Original file is located at
 ### Image Classification
 """
 
-!wget --no-check-certificate \
-  https://github.com/dicodingacademy/assets/releases/download/release/rockpaperscissors.zip \
-  -O /tmp/rockpaperscissors.zip
+from google.colab import files
+
+files.upload()
+
+!cp kaggle.json ~/.kaggle/
+!chmod 600 ~/.kaggle/kaggle.json
+
+!kaggle datasets download -d muratkokludataset/rice-image-dataset
+
+zipPath = '../content/rice-image-dataset.zip'
+zipFile = zipfile.ZipFile(zipPath, 'r')
+zipFile.extractall('../content/RiceDataset/')
+zipFile.close()
+
+FILE_PATH = '../content/RiceDataset/Rice_Image_Dataset/'
 
 # Commented out IPython magic to ensure Python compatibility.
 import zipfile,os,shutil
@@ -23,93 +35,95 @@ from sklearn.model_selection import train_test_split
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import Callback, EarlyStopping
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Activation, Dense, Flatten
+from tensorflow.keras.layers import Flatten, Dense, Conv2D, MaxPooling2D, Dropout, BatchNormalization
 from tensorflow.keras.layers import Dropout
 from tensorflow.keras.optimizers import Adam
 import numpy as np
-from google.colab import files
 from keras.preprocessing import image
+import pathlib
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 # %matplotlib inline
 
-local_zip = '/tmp/rockpaperscissors.zip'
-zip_ref = zipfile.ZipFile(local_zip, 'r')
-zip_ref.extractall('/tmp')
-zip_ref.close()
+arborio_dir = os.path.join(FILE_PATH,'Arborio')
+basmati_dir = os.path.join(FILE_PATH, 'Basmati')
+ipsala_dir = os.path.join(FILE_PATH, 'Ipsala')
+jasmine_dir = os.path.join(FILE_PATH, 'Jasmine')
+karacadag_dir = os.path.join(FILE_PATH, 'Karacadag')
 
-base_dir = '/tmp/rockpaperscissors/rps-cv-images'
-roc_dir = os.path.join(base_dir,'rock')
-pap_dir = os.path.join(base_dir, 'paper')
-sci_dir = os.path.join(base_dir, 'scissors')
+total_arborio = len(os.listdir(arborio_dir))
+total_basmati = len(os.listdir(basmati_dir))
+total_ipsala = len(os.listdir(ipsala_dir))
+total_jasmine = len(os.listdir(jasmine_dir))
+total_karacadag = len(os.listdir(karacadag_dir))
 
-total_rock = len(os.listdir(roc_dir))
-total_paper = len(os.listdir(pap_dir))
-total_scissors = len(os.listdir(sci_dir))
+print("Arborio Image      : ", total_arborio)
+print("Basmati Image      : ", total_basmati)
+print("Ipsala Image       : ", total_ipsala)
+print("Jasmine Image      : ", total_jasmine)
+print("Karacadag Image    : ", total_karacadag)
 
-print("Paper Image     : ",total_paper)
-print("Rock Image      : ",total_rock)
-print("Scissors Image  : ",total_scissors)
+IMG_HEIGHT = 150
+IMG_WIDTH = 150
+BATCH_SIZE = 64
 
 val_size = 0.2
 
 Train_datagen = ImageDataGenerator(
-    rotation_range = 30,
-    brightness_range = [0.2,1.0],
-    shear_range = 0.2,
-    zoom_range = 0.2,
+    rescale = 1.0/255,
+    rotation_range = 20,
     horizontal_flip = True,
-    fill_mode = "nearest",
-    rescale = 1./255,
+    shear_range = 0.2,
+    fill_mode = 'nearest',
     validation_split = val_size
 )
 
 Validation_datagen = ImageDataGenerator(
-    rotation_range = 30,
-    brightness_range = [0.2,1.0],
-    shear_range = 0.2,
-    zoom_range = 0.2,
-    horizontal_flip = True,
-    fill_mode = "nearest",
     rescale = 1./255,
     validation_split = val_size
 )
 
 Train_generator = Train_datagen.flow_from_directory(
-    base_dir,
-    target_size = (150,150),
-    color_mode = "rgb",
-    class_mode = "categorical",
-    batch_size = 16,
-    shuffle = True,
-    subset = "training"
+    FILE_PATH,
+    target_size = (IMG_HEIGHT, IMG_WIDTH),
+    batch_size = BATCH_SIZE,
+    class_mode = 'categorical',
+    subset = 'training'
 )
 
 Validation_generator = Validation_datagen.flow_from_directory(
-    base_dir,
-    target_size = (150,150),
-    color_mode = "rgb",
-    class_mode = "categorical",
-    batch_size = 16,
-    shuffle = False,
-    subset = "validation"
+    FILE_PATH,
+    target_size = (IMG_HEIGHT, IMG_WIDTH),
+    batch_size = BATCH_SIZE,
+    class_mode = 'categorical',
+    subset='validation'
 )
+
+target_names = ['Arborio', 'Basmati', 'Ipsala', 'Jasmine', 'Karacadag']
 
 Model = Sequential(
     [
-     Conv2D(32, (3,3), strides = (1,1), activation = 'relu' , input_shape = (150,150,3)),
-     MaxPooling2D(pool_size = (2,2), padding = 'valid'),
-     Conv2D(64, (3,3), strides = (1,1), activation = 'relu' ),
-     MaxPooling2D(pool_size = (2,2), padding = 'valid'),
-     Conv2D(128, (3,3), strides = (1,1), activation = 'relu' ),
-     MaxPooling2D(pool_size = (2,2), padding = 'valid'),
-     Flatten(),
-     Dropout(0.2),
-     Dense(128, activation = 'relu'),
-     Dense(3, activation='softmax')
+      Conv2D(filters = 16, kernel_size = (5, 5), padding = 'Same', activation = 'relu', input_shape = (IMG_HEIGHT, IMG_WIDTH, 3)),
+      MaxPooling2D(pool_size = (2,2)),
+      Dropout(0.2),
+      BatchNormalization(),
+
+      Conv2D(filters = 32, kernel_size = (3, 3), padding = 'Same', activation = 'relu'),
+      MaxPooling2D(pool_size = (2,2), strides = (2, 2)),
+      Dropout(0.2),
+
+      Conv2D(filters = 64, kernel_size = (3, 3), padding = 'Same', activation = 'relu'),
+      MaxPooling2D(pool_size = (2,2), strides = (2, 2)),
+      Dropout(0.2),
+
+      Flatten(),
+      Dense(64, activation='relu'),
+      Dropout(0.2),
+      Dense(5, activation='softmax')
     ]
 )
 
@@ -118,76 +132,51 @@ Model.compile(optimizer = 'Adam', loss = 'categorical_crossentropy', metrics = [
 
 class EarlyStopByAccuracy(tf.keras.callbacks.Callback):
 	def on_epoch_end(self, epoch, logs={}):
-		if(logs.get('accuracy') > 0.9):
-			print("\nReached %2.2f%% accuracy, so stopping training!!" %(0.9*100))
+		if(logs.get('accuracy') >= 0.95 and logs.get('val_accuracy') >= 0.95):
+			print("\nAccuracy and Validation Accuracy has reached 95%!\nStop Train!")
 			self.model.stop_training = True
 
-# Instantiate a callback object
 callbacks = EarlyStopByAccuracy()
 
-def scheduler(epoch, lr):
-  if epoch < 5:
-    return lr
-  else:
-    return lr * tf.math.exp(-0.1)
+EarlyStop = EarlyStopping(
+    monitor = 'val_loss',
+    min_delta = 0.0001,
+    patience = 5,
+    verbose = 1,
+    mode = 'auto'
+)
 
-lr_schedule = tf.keras.callbacks.LearningRateScheduler(scheduler, verbose=1)
+history = Model.fit(
+  Train_generator,
+  epochs =  100,
+  validation_data = Validation_generator,
+  verbose = 1,
+  callbacks =[callbacks, EarlyStop]
+)
 
-Model.summary()
-
-batch_size = 16
-with tf.device("/device:GPU:0"):
-  history = Model.fit(Train_generator,
-                    epochs =  40,
-                    steps_per_epoch = 1751//batch_size,
-                    validation_data = Validation_generator,
-                    verbose = 1,
-                    validation_steps = 437//batch_size,
-                    callbacks =[lr_schedule, callbacks])
-
-uploaded = files.upload()
-
-for file_upload in uploaded.keys():
-
-  path = file_upload
-  img = image.load_img(path, target_size=(150,150))
-  imgplot = plt.imshow(img)
-  x = image.img_to_array(img)
-  x = np.expand_dims(x, axis=0)
-
-  images = np.vstack([x])
-  classes = Model.predict(images, batch_size=16)
-
-  print("\n")
-  print('Prediction Result : ', classes[0],'\n')
-
-  if classes[0][0] == 1:
-    print('Image Category : Paper')
-  elif classes[0][1] == 1:
-    print('Image Category : Rock')
-  else:
-    print('Image Category : Scissor')
-
-plt.plot(history.history['accuracy'])
-plt.plot(history.history['val_accuracy'])
-plt.title('Accuracy')
-plt.ylabel('accuracy')
-plt.xlabel('epoch')
-plt.legend(['train', 'val'], loc='upper left')
-plt.show()
-
+print("Loss with Val_Loss Graph")
 plt.plot(history.history['loss'])
 plt.plot(history.history['val_loss'])
-plt.title('Loss')
-plt.ylabel('loss')
-plt.xlabel('epoch')
-plt.legend(['train', 'val'], loc='upper left')
+plt.title('Model Loss')
+plt.ylabel('Loss')
+plt.xlabel('Epochs')
+plt.legend(['train', 'test'], loc = 'upper right')
 plt.show()
 
-import warnings
+print("Acc with Val_Acc Graph")
+plt.plot(history.history['accuracy'])
+plt.plot(history.history['val_accuracy'])
+plt.title('Model Accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['train', 'test'], loc='lower right')
+plt.show()
 
-warnings.filterwarnings('ignore')
-converter = tf.lite.TFLiteConverter.from_keras_model(Model)
+export_dir = 'saved_model/'
+tf.saved_model.save(Model, export_dir)
+
+converter = tf.lite.TFLiteConverter.from_saved_model(export_dir)
 tflite_model = converter.convert()
-with tf.io.gfile.GFile('model.tflite', 'wb') as f:
-  f.write(tflite_model)
+
+tflite_model_file = pathlib.Path('RiceModel.tflite')
+tflite_model_file.write_bytes(tflite_model)
